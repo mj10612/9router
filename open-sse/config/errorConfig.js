@@ -76,6 +76,38 @@ export const ERROR_RULES = [
   { status: 429, backoff: true },
 ];
 
+/**
+ * Model-fit errors — the request is well-formed but THIS model cannot serve it
+ * because it is too small for the payload. Substring match, case-insensitive.
+ *
+ * Deliberately separate from ERROR_RULES: a context overflow is request-scoped
+ * and says nothing about the credential, so an account must NOT be cooled down
+ * for it (see the 4xx note in accountFallback.js). What it DOES mean is that a
+ * combo should move on to its next member, which may well have a larger window.
+ */
+export const MODEL_FIT_ERROR_RULES = [
+  "maximum context length",            // OpenAI, DeepSeek, Mistral, Qwen, most OSS gateways
+  "context_length_exceeded",           // OpenAI SDK / codex error code
+  "exceed context limit",              // Anthropic: "input length and max_tokens exceed context limit"
+  "exceeds the maximum number of tokens", // Gemini: "The input token count (N) exceeds..."
+  "context window exceeded",           // Ollama and several proxies
+  "prompt is too long",                // Gemini / Codex wording
+  "too many input tokens",
+];
+
+/**
+ * Does this error mean "this model is too small for this request"?
+ * Distinct from checkFallbackError(): that answers "is this credential at
+ * fault", this answers "can this model carry the payload".
+ * @param {string} errorText - Upstream error message
+ * @returns {boolean}
+ */
+export function isModelFitError(errorText) {
+  if (!errorText) return false;
+  const lower = typeof errorText === "string" ? errorText : String(errorText);
+  return MODEL_FIT_ERROR_RULES.some((rule) => lower.toLowerCase().includes(rule));
+}
+
 // Backward compat: COOLDOWN_MS object (used by index.js re-export)
 export const COOLDOWN_MS = {
   unauthorized: COOLDOWN.long,

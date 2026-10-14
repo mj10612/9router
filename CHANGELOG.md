@@ -1,3 +1,8 @@
+# Unreleased
+
+## Fixes
+- **Combos**: try the next model when one member is too small for the request (context overflow), instead of returning the upstream 400 to the client; the account is still never cooled down for a request-scoped error (#4796)
+
 # v0.5.99 (2026-10-08)
 
 ## Features

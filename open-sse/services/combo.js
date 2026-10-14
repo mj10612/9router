@@ -3,6 +3,7 @@
  */
 
 import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
+import { isModelFitError } from "../config/errorConfig.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
@@ -334,9 +335,23 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       // Check if should fallback to next model
       const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
 
-      if (!shouldFallback) {
+      // checkFallbackError answers "is this credential at fault" — a context
+      // overflow is request-scoped, so it reports shouldFallback:false on purpose
+      // (the account must not be cooled down for it). Inside a combo that is the
+      // wrong question to ask: the request is valid, only THIS member is too
+      // small for it, and the next member may well have room. Try the next model
+      // without cooling anything down (cooldownMs is 0 here, so the transient
+      // wait below is skipped too). If every member overflows, the loop falls
+      // through and the client still gets the upstream 400 verbatim. (#4796)
+      const tooSmallForRequest = !shouldFallback && isModelFitError(errorText);
+
+      if (!shouldFallback && !tooSmallForRequest) {
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
         return result;
+      }
+
+      if (tooSmallForRequest) {
+        log.warn("COMBO", `Model ${modelStr} too small for request, trying next`, { status: result.status });
       }
 
       // For transient errors (503/502/504), wait for cooldown before falling through
